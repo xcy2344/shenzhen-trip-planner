@@ -502,7 +502,7 @@ def generate_plan(state: TripState) -> dict:
 
 要求：
 1. 每天景点不重复
-2. 每天 estimated_cost = 酒店价 + 餐厅人均×{people} + 门票
+2. 每天 estimated_cost = 酒店价 + 餐厅人均×{people} + 门票×{people} + 10 元杂费
 3. 总和 ≤ {budget} 元
 4. 只返回 JSON 数组"""
 
@@ -633,7 +633,7 @@ def validate_plan(state: TripState) -> dict:
                 cost += safe_number(r.get("avg_price"), 0) * people
         for a in day.get("attractions", []):
             if isinstance(a, dict):
-                cost += safe_number(a.get("ticket"), 0)
+                cost += safe_number(a.get("ticket"), 0) * people
         cost += 10
         
         day["estimated_cost"] = round(cost, 2)
@@ -744,19 +744,27 @@ def auto_fix_plan(state: TripState) -> dict:
         
         for a in day.get("attractions", []):
             if isinstance(a, dict):
-                cost += safe_number(a.get("ticket"), 0)
+                cost += safe_number(a.get("ticket"), 0) * people
         
         cost += 10
         day["estimated_cost"] = round(cost, 2)
         total += cost
     
+    budget = safe_number(request.get("budget", 0), 99999) or 99999
+    total_cost = round(total, 2)
+    errors = []
+    if total_cost > budget:
+        errors.append(
+            f"已自动更换为最省钱的住宿和餐饮，总花费 {total_cost} 元仍超过预算 {budget} 元，建议减少天数、减少人数或提高预算。"
+        )
+    
     return {
         "plan": plan,
-        "errors": [],
+        "errors": errors,
         "route_info": {
             **state.get("route_info", {}),
-            "total_cost": round(total, 2),
-            "is_valid": True,
+            "total_cost": total_cost,
+            "is_valid": len(errors) == 0,
             "auto_fixed": True,
         }
     }
