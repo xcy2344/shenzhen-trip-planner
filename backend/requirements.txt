@@ -5,4 +5,5 @@ langchain==0.1.0
 langchain-community==0.0.10
 langgraph==0.0.20
 dashscope==1.14.0
+PyJWT==2.13.0
 pytest==7.4.0

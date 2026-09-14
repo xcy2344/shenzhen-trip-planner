@@ -55,6 +55,7 @@ class AuditLog(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(64), index=True)
+    user_id = Column(String(64), index=True)            # 鉴权用户（来自 JWT）
     action = Column(String(64))                        # 动作：chat / modify / ...
     input_text = Column(Text)
     output_text = Column(Text)

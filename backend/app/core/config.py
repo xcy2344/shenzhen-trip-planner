@@ -18,6 +18,11 @@ class Config:
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "shenzhen_trip")
     
+    # JWT
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+    JWT_ALGORITHM = "HS256"
+    JWT_EXPIRE_HOURS = 24
+    
     @property
     def MYSQL_URL(self):
         return (

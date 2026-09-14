@@ -1,9 +1,10 @@
 import time
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.graph.builder import app_graph
 from app.core.logging import logger
+from app.core.security import create_access_token, verify_token
 from app.core.redis_rate_limiter import ip_limiter, session_limiter
 from app.core.redis_cache import plan_cache
 from app.models.session_mysql import session_store
@@ -35,16 +36,71 @@ class ChatResponse(BaseModel):
     cached: bool = False
 
 
+class LoginRequest(BaseModel):
+    user_id: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    """从 Authorization: Bearer <token> 请求头中取出 token"""
+    if not authorization:
+        return None
+    parts = authorization.strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
+@app.post("/login", response_model=LoginResponse)
+def login(req: LoginRequest):
+    """登录接口：用 user_id 换取 JWT（演示用，未做密码校验）"""
+    user_id = req.user_id.strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id 不能为空")
+    
+    access_token = create_access_token(user_id)
+    logger.info(f"[{user_id}] 登录成功，已签发 access token")
+    return LoginResponse(access_token=access_token, token_type="bearer")
+
+
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, request: Request):
-    """对话接口（带限流 + 缓存）"""
-    session_id = req.session_id or "default_session"
+def chat(req: ChatRequest, request: Request, authorization: Optional[str] = Header(None)):
+    """对话接口（JWT 鉴权 + 限流 + 缓存）"""
     ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    
+    # ========== JWT 鉴权 ==========
+    token = _extract_bearer_token(authorization)
+    user_id = verify_token(token) if token else None
+    if not user_id:
+        detail = (
+            "缺少或格式错误的 Authorization 请求头，应为：Bearer <token>"
+            if not token else "token 无效或已过期"
+        )
+        logger.warning(f"[{ip}] 鉴权失败：{detail}")
+        _save_audit(
+            session_id=req.session_id or "", action="auth_failed",
+            input_text=req.input, output_text="",
+            ip=ip, user_id="", user_agent=user_agent,
+            success=False, error_msg=detail,
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=detail,
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # 未显式传 session_id 时，用 token 里的 user_id 作为会话标识
+    session_id = req.session_id or user_id
     
     # ========== IP 限流 ==========
     ip_ok, ip_remaining, ip_reset = ip_limiter.allow(ip)
@@ -53,7 +109,7 @@ def chat(req: ChatRequest, request: Request):
         _save_audit(
             session_id=session_id, action="rate_limit_ip",
             input_text=req.input, output_text="",
-            ip=ip, success=False,
+            ip=ip, user_id=user_id, success=False,
             error_msg=f"IP 限流，{ip_reset}秒后重试"
         )
         raise HTTPException(
@@ -69,7 +125,7 @@ def chat(req: ChatRequest, request: Request):
         _save_audit(
             session_id=session_id, action="rate_limit_session",
             input_text=req.input, output_text="",
-            ip=ip, success=False,
+            ip=ip, user_id=user_id, success=False,
             error_msg=f"会话限流，{session_reset}秒后重试"
         )
         raise HTTPException(
@@ -79,14 +135,14 @@ def chat(req: ChatRequest, request: Request):
         )
     
     # ========== 尝试读缓存 ==========
-    cache_key = f"chat:{req.input}"
+    cache_key = f"chat:{user_id}:{req.input}"
     cached_result = plan_cache.get(cache_key)
     if cached_result:
         logger.info(f"[{session_id}] 命中缓存")
         _save_audit(
             session_id=session_id, action="cache_hit",
             input_text=req.input, output_text=cached_result.get("output", "")[:200],
-            ip=ip, success=True,
+            ip=ip, user_id=user_id, success=True,
         )
         return ChatResponse(
             output=cached_result.get("output", ""),
@@ -157,6 +213,7 @@ def chat(req: ChatRequest, request: Request):
             input_text=req.input,
             output_text=final_answer,
             ip=ip,
+            user_id=user_id,
             user_agent=request.headers.get("user-agent", ""),
             success=True,
             duration_ms=duration_ms,
@@ -179,6 +236,7 @@ def chat(req: ChatRequest, request: Request):
             input_text=req.input,
             output_text="",
             ip=ip,
+            user_id=user_id,
             user_agent=request.headers.get("user-agent", ""),
             success=False,
             error_msg=str(e),
@@ -186,12 +244,13 @@ def chat(req: ChatRequest, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _save_audit(session_id, action, input_text, output_text, ip="", user_agent="", success=True, error_msg="", duration_ms=0):
+def _save_audit(session_id, action, input_text, output_text, ip="", user_id="", user_agent="", success=True, error_msg="", duration_ms=0):
     """保存审计日志"""
     db = SessionLocal()
     try:
         log = AuditLog(
             session_id=session_id,
+            user_id=user_id,
             action=action,
             input_text=input_text,
             output_text=output_text[:2000] if output_text else "",
