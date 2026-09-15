@@ -4,6 +4,7 @@ from app.graph.nodes import (
     load_session,
     parse_intent,
     parse_request,
+    chat_reply,
     parse_modification,
     search_hotels,
     rag_retrieve,
@@ -58,6 +59,7 @@ def build_graph():
     graph.add_node("load_session", load_session)
     graph.add_node("parse_intent", parse_intent)
     graph.add_node("parse_request", parse_request)
+    graph.add_node("chat_reply", chat_reply)
     graph.add_node("parse_modification", parse_modification)
     graph.add_node("rag_retrieve", rag_retrieve)
     graph.add_node("enrich_coordinates", enrich_coordinates)   # ⭐ 新增
@@ -81,9 +83,12 @@ def build_graph():
         {
             "plan": "parse_request",
             "modify": "parse_modification",
-            "chat": END,
+            "chat": "chat_reply",
         }
     )
+    
+    # 闲聊分支：生成一句回复后结束
+    graph.add_edge("chat_reply", END)
     
     # 检索流程
     graph.add_edge("parse_request", "rag_retrieve")

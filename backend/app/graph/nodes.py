@@ -73,6 +73,36 @@ def parse_intent(state: TripState) -> dict:
     return {"intent": intent}
 
 
+def chat_reply(state: TripState) -> dict:
+    """闲聊：调大模型生成一句友好的回复"""
+    set_context(state.get("session_id", ""), "chat_reply")
+    
+    user_input = state.get("user_input", "")
+    has_prev = len(state.get("prev_plan", [])) > 0
+    
+    follow_up = (
+        "用户之前已经有一份行程了，可以顺带告诉他：想调整行程直接说就行。"
+        if has_prev else
+        "用户还没有行程，可以顺带邀请他告诉你要去几天、几个人、预算多少。"
+    )
+    
+    prompt = f"""你是「深圳旅游助手」，请用友好、自然的语气回复用户。
+
+要求：
+1. 只回复 1-3 句话，不要长篇大论
+2. 不要编造景点、酒店、价格、天气等具体数据
+3. {follow_up}
+4. 直接返回自然语言，不要返回 JSON
+
+用户输入：{user_input}"""
+    
+    answer = chat(prompt, purpose="chat_reply").strip()
+    if not answer:
+        answer = "你好呀！我是深圳旅游助手，可以帮你规划深圳行程，告诉我去几天、几个人、预算多少就行～"
+    
+    return {"final_answer": answer}
+
+
 def parse_request(state: TripState) -> dict:
     """解析用户请求参数"""
     set_context(state.get("session_id", ""), "parse_request")

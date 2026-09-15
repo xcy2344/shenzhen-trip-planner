@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>深圳深度游 AI 旅行规划平台</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --bg-2: #0f172a;
+    --card: #131c31;
+    --line: #1e2a47;
+    --text: #e6edf7;
+    --muted: #8ea2c0;
+    --blue: #3b82f6;
+    --blue-2: #60a5fa;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(900px 500px at 50% -10%, #17305e 0%, var(--bg) 55%, #070c17 100%);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px 70px;
+  }
+  .wrap { width: 100%; max-width: 900px; }
+  header { text-align: center; margin-bottom: 30px; }
+  h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #7dd3fc, var(--blue-2), #a78bfa);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub { margin: 0; color: var(--muted); font-size: 14px; letter-spacing: .5px; }
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  }
+  .card-title {
+    font-size: 13px;
+    color: var(--blue-2);
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  input[type="text"] {
+    flex: 1;
+    min-width: 220px;
+    background: #0a1120;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input[type="text"]:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59, 130, 246, .2); }
+  button {
+    background: linear-gradient(180deg, var(--blue), #2563eb);
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 12px 22px;
+    cursor: pointer;
+    transition: transform .12s, filter .2s;
+    white-space: nowrap;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: translateY(1px); }
+  button:disabled { filter: grayscale(.6) brightness(.7); cursor: not-allowed; }
+  .state { font-size: 14px; color: var(--muted); padding-left: 4px; }
+  .state.ok { color: var(--ok); }
+  .state.bad { color: var(--err); }
+  .progress {
+    font-size: 15px;
+    line-height: 1.9;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--blue-2);
+    min-height: 28px;
+    margin: 0;
+    font-family: Consolas, "Courier New", monospace;
+  }
+  .result {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 17px;
+    line-height: 1.85;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: #dbe6f6;
+  }
+  .meta { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 13px; }
+  .error { color: var(--err); margin-top: 10px; font-size: 15px; white-space: pre-wrap; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>深圳深度游 AI 旅行规划平台</h1>
+      <p class="sub">LangGraph 多节点编排 · SSE 流式输出 · JWT 鉴权</p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <input id="userId" type="text" value="alice" placeholder="请输入 user_id，例如 alice">
+        <button id="loginBtn">登录</button>
+        <span id="loginState" class="state">未登录</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <input id="chatInput" type="text" value="帮我规划深圳2日游，2个人，预算2000" placeholder="例如：帮我规划深圳2日游，2个人，预算2000">
+        <button id="planBtn">开始规划</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">实时进度</div>
+      <div id="progress" class="progress">等待开始…</div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">行程结果</div>
+      <pre id="result" class="result">（暂无结果）</pre>
+      <div id="meta" class="meta">意图：- · 天数：- · 缓存：-</div>
+      <div id="error" class="error"></div>
+    </section>
+
+    <div class="hint">提示：可点击“登录”后再点“开始规划”；若页面是本地文件打开，后端需允许跨域（已配置 CORS *）。</div>
+  </div>
+
+<script>
+  // 后端地址：默认本机 8000，可用 ?api=http://ip:port 覆盖
+  const API = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:8000";
+
+  let token = null;
+  let busy = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  function setLoginState(text, ok) {
+    const el = $("loginState");
+    el.textContent = text;
+    el.className = "state" + (ok === undefined ? "" : ok ? " ok" : " bad");
+  }
+  function addProgress(line) {
+    const el = $("progress");
+    if (el.dataset.empty !== "0") { el.textContent = ""; el.dataset.empty = "0"; }
+    el.textContent += line + "\n";
+  }
+  function setResult(text) { $("result").textContent = text; }
+  function setMeta(text) { $("meta").textContent = text; }
+  function setError(text) { $("error").textContent = text || ""; }
+  function clearError() { $("error").textContent = ""; }
+
+  function setBusy(value) {
+    busy = value;
+    $("planBtn").disabled = value;
+    $("planBtn").textContent = value ? "规划中…" : "开始规划";
+  }
+
+  async function describeError(res) {
+    try {
+      const body = await res.json();
+      if (body && body.detail) {
+        return typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      }
+    } catch (e) { /* 非 JSON 响应，忽略 */ }
+    return "HTTP " + res.status + " " + (res.statusText || "");
+  }
+
+  // 按 SSE 规范解析：事件之间用空行分隔，data 支持多行
+  async function readSSE(response, onEvent) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop();
+      for (const block of blocks) {
+        let event = "message";
+        const dataLines = [];
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
+        }
+        if (dataLines.length) onEvent(event, dataLines.join("\n"));
+      }
+    }
+  }
+
+  async function login() {
+    const userId = $("userId").value.trim();
+    if (!userId) { setLoginState("请先输入 user_id", false); return; }
+    setLoginState("登录中…");
+    clearError();
+    try {
+      const res = await fetch(API + "/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      if (!res.ok) { throw new Error(await describeError(res)); }
+      const data = await res.json();
+      token = data.access_token;
+      setLoginState("已登录：" + userId, true);
+    } catch (e) {
+      token = null;
+      setLoginState("登录失败：" + e.message, false);
+    }
+  }
+
+  async function startPlan() {
+    if (busy) return;
+    clearError();
+    if (!token) { setError("未登录或token失效"); return; }
+    const input = $("chatInput").value.trim();
+    if (!input) { setError("请输入你的旅行需求"); return; }
+
+    setBusy(true);
+    const p = $("progress");
+    p.dataset.empty = "0";
+    p.textContent = "";
+    addProgress("🚀 已提交请求，正在连接后端…");
+    setResult("（生成中，请稍候…）");
+    setMeta("意图：- · 天数：- · 缓存：-");
+
+    try {
+      const res = await fetch(API + "/chat/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+          "Authorization": "Bearer " + token,
+        },
+        body: JSON.stringify({ input }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          token = null;
+          setLoginState("未登录", false);
+          setError("未登录或token失效");
+        } else if (res.status === 429) {
+          setError("请求太频繁");
+        } else {
+          setError(await describeError(res));
+        }
+        setResult("（未生成行程）");
+        return;
+      }
+
+      await readSSE(res, (event, data) => {
+        if (event === "progress") {
+          addProgress("⏳ " + data);
+        } else if (event === "result") {
+          let payload = {};
+          try { payload = JSON.parse(data); } catch (e) { setError("结果解析失败：" + e.message); }
+          setResult(payload.output || "（后端返回了空内容）");
+          const days = Array.isArray(payload.plan) ? payload.plan.length : 0;
+          setMeta("意图：" + (payload.intent || "-") + " · 天数：" + days + " · 缓存：" + (payload.cached ? "是" : "否"));
+          addProgress("✅ 行程已生成");
+        } else if (event === "error") {
+          setError(data);
+          setResult("（生成失败）");
+        }
+      });
+    } catch (e) {
+      setError("请求失败：" + e.message + "（请确认后端已启动，且允许跨域）");
+      setResult("（未生成行程）");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  $("loginBtn").addEventListener("click", login);
+  $("planBtn").addEventListener("click", startPlan);
+  $("userId").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+  $("chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") startPlan(); });
+</script>
+</body>
+</html>
